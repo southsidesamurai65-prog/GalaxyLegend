@@ -37,6 +37,11 @@ export function renderPreparePanel(
   game: Game,
   callbacks: PrepareCallbacks,
 ): void {
+  const previousRosterScroll =
+    container.querySelector<HTMLElement>('.roster-list')?.scrollTop ?? 0;
+  const previousCrystalScroll =
+    container.querySelector<HTMLElement>('.crystal-grid')?.scrollTop ?? 0;
+
   container.innerHTML = '';
 
   const roster = document.createElement('div');
@@ -134,12 +139,13 @@ export function renderPreparePanel(
   if (game.enemyEditMode) {
     renderEnemyEditPanel(container, game, callbacks);
     renderLineupPresets(container, callbacks);
+    restorePanelScroll(container, previousRosterScroll, previousCrystalScroll);
     return;
   }
 
   const charId = game.selectedCharId;
   const detail = document.createElement('div');
-  detail.className = 'panel-section';
+  detail.className = 'panel-section char-detail';
 
   if (!charId) {
     detail.innerHTML =
@@ -187,6 +193,18 @@ export function renderPreparePanel(
     crystalInventorySection(game, charId, slot, false, callbacks),
   );
   renderLineupPresets(container, callbacks);
+  restorePanelScroll(container, previousRosterScroll, previousCrystalScroll);
+}
+
+function restorePanelScroll(
+  container: HTMLElement,
+  rosterTop: number,
+  crystalTop: number,
+): void {
+  const roster = container.querySelector<HTMLElement>('.roster-list');
+  if (roster) roster.scrollTop = rosterTop;
+  const crystals = container.querySelector<HTMLElement>('.crystal-grid');
+  if (crystals) crystals.scrollTop = crystalTop;
 }
 
 function renderEnemyEditPanel(
@@ -200,7 +218,7 @@ function renderEnemyEditPanel(
     : undefined;
 
   const detail = document.createElement('div');
-  detail.className = 'panel-section';
+  detail.className = 'panel-section char-detail';
 
   if (!charId || !slot) {
     detail.innerHTML =
@@ -415,7 +433,7 @@ export function renderBattlePanel(container: HTMLElement, game: Game): void {
 
   const selected = game.getSelectedBattleUnit();
   const detail = document.createElement('div');
-  detail.className = 'panel-section';
+  detail.className = 'panel-section char-detail';
 
   if (selected) {
     detail.innerHTML = `

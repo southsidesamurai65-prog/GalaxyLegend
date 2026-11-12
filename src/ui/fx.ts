@@ -312,6 +312,69 @@ function createAura(
   }, delay);
 }
 
+function createExplosion(side: Side, coord: Coord, delay: number): void {
+  schedule(() => {
+    if (!fxLayer) return;
+    const cell = cellFor(side, coord);
+    const point = pointFor(side, coord);
+    if (!cell || !point) return;
+
+    const rect = cell.getBoundingClientRect();
+    const blast = Math.max(rect.width, rect.height, 40);
+
+    const explosion = document.createElement('div');
+    explosion.className = 'explosion';
+    explosion.style.left = `${point.x}px`;
+    explosion.style.top = `${point.y}px`;
+    explosion.style.setProperty('--blast', `${blast}px`);
+
+    const shards = Array.from({ length: 16 }, (_, index) => {
+      const angle = (360 / 16) * index + (Math.random() * 24 - 12);
+      const distance = blast * (0.45 + Math.random() * 0.55);
+      const size = 6 + Math.random() * 6;
+      const shardDelay = Math.random() * 80;
+      return `<i class="explosion-shard" style="--angle:${angle.toFixed(
+        1,
+      )}deg;--distance:${distance.toFixed(1)}px;--size:${size.toFixed(
+        1,
+      )}px;--delay:${shardDelay.toFixed(0)}ms"></i>`;
+    }).join('');
+
+    const smoke = Array.from({ length: 5 }, (_, index) => {
+      const angle = 72 * index + (Math.random() * 30 - 15);
+      const distance = blast * (0.35 + Math.random() * 0.4);
+      const smokeDelay = 60 + Math.random() * 120;
+      return `<i class="explosion-smoke" style="--angle:${angle.toFixed(
+        1,
+      )}deg;--distance:${distance.toFixed(1)}px;--delay:${smokeDelay.toFixed(
+        0,
+      )}ms"></i>`;
+    }).join('');
+
+    explosion.innerHTML = `
+      <i class="explosion-flash"></i>
+      <i class="explosion-fireball"></i>
+      <i class="explosion-ring"></i>
+      <i class="explosion-ring second"></i>
+      ${shards}
+      ${smoke}
+    `;
+    fxLayer.appendChild(explosion);
+    window.setTimeout(() => explosion.remove(), 1300);
+
+    const battlefield = document.querySelector<HTMLElement>('.battlefield');
+    if (battlefield) {
+      battlefield.classList.remove('battle-shake');
+      // 强制重排，让连续阵亡时震动动画可以重新播放。
+      void battlefield.offsetWidth;
+      battlefield.classList.add('battle-shake');
+      window.setTimeout(() => {
+        battlefield.classList.remove('battle-shake');
+      }, 420);
+    }
+  }, delay);
+}
+
 function createImpact(
   side: Side,
   coord: Coord,
@@ -652,7 +715,8 @@ export function playEventsFx(events: BattleEvent[]): void {
           () => flashCell(event.side, event.coord, 'death-flash'),
           delay,
         );
-        floatText(event.side, event.coord, '阵亡', 'death', delay);
+        createExplosion(event.side, event.coord, delay);
+        floatText(event.side, event.coord, '阵亡', 'death', delay + 60);
         break;
       }
 

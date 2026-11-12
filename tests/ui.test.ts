@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { playEventsFx } from '../src/ui/fx';
 
 describe('ui smoke', () => {
   beforeAll(async () => {
@@ -44,6 +45,28 @@ describe('ui smoke', () => {
     vi.advanceTimersByTime(600);
     expect(
       document.querySelectorAll('#battle-fx-layer .float-text').length,
+    ).toBeGreaterThan(0);
+  });
+
+  it('阵亡时在对应格子生成爆炸特效', () => {
+    playEventsFx([
+      {
+        type: 'death',
+        unitId: 'fallen',
+        unitName: '测试舰',
+        side: 'player',
+        coord: { x: 2, y: 2 },
+      },
+    ]);
+
+    vi.advanceTimersByTime(120);
+
+    expect(document.querySelector('#battle-fx-layer .explosion')).not.toBeNull();
+    expect(
+      document.querySelectorAll('#battle-fx-layer .explosion-fireball').length,
+    ).toBe(1);
+    expect(
+      document.querySelectorAll('#battle-fx-layer .explosion-shard').length,
     ).toBeGreaterThan(0);
   });
 });

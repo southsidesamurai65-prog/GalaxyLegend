@@ -15,6 +15,15 @@ import { LogView } from './ui/logView';
 import { clearFxLayer, initFxLayer, playEventsFx } from './ui/fx';
 import { initGalaxyBackground } from './ui/background';
 
+// 生产环境注册离线缓存；开发环境跳过，避免缓存干扰热更新。
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(() => {
+      // 不支持或注册失败时仍然可以正常在线游玩。
+    });
+  });
+}
+
 const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) throw new Error('Missing #app');
 
@@ -215,6 +224,13 @@ function handleEnemyCellClick(coord: Coord): void {
 function handleUnitClick(unitId: string): void {
   game.selectedBattleUnitId = unitId;
   render();
+
+  // 手机上面板在战场下方，点击角色后把详情滚进视野。
+  if (!window.matchMedia('(max-width: 820px)').matches) return;
+  const detail = panelContent.querySelector<HTMLElement>('.char-detail');
+  if (!detail) return;
+  if (detail.getBoundingClientRect().top <= window.innerHeight - 120) return;
+  detail.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function handlePreviewClick(charId: string): void {
