@@ -25,6 +25,13 @@ export class Board {
     return this.aliveUnits(otherSide(side));
   }
 
+  /** 隐身单位不能被选为靶点，也不能被攻击到。 */
+  targetableEnemies(side: Side): Unit[] {
+    return this.aliveUnits(otherSide(side)).filter(
+      (unit) => !unit.isStealthed(),
+    );
+  }
+
   unitAt(side: Side, coord: Coord): Unit | undefined {
     return this.units.find(
       (unit) =>
@@ -40,14 +47,14 @@ export class Board {
   }
 
   aliveEnemiesInRow(side: Side, x: number): Unit[] {
-    return this.aliveEnemies(side).filter((unit) => unit.coord.x === x);
+    return this.targetableEnemies(side).filter((unit) => unit.coord.x === x);
   }
 
   aliveEnemiesInColumn(side: Side, y: number): Unit[] {
-    return this.aliveEnemies(side).filter((unit) => unit.coord.y === y);
+    return this.targetableEnemies(side).filter((unit) => unit.coord.y === y);
   }
 
   totalSpeed(side: Side): number {
-    return this.aliveUnits(side).reduce((total, unit) => total + unit.stats.speed, 0);
+    return this.aliveUnits(side).reduce((total, unit) => total + unit.getStat('speed'), 0);
   }
 }

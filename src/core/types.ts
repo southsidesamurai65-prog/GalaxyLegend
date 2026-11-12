@@ -11,6 +11,7 @@ export type AttributeKey =
   | 'skillAtk'
   | 'physDef'
   | 'skillDef'
+  | 'energyDef'
   | 'hp'
   | 'initialCharge'
   | 'speed'
@@ -18,7 +19,9 @@ export type AttributeKey =
   | 'dodge'
   | 'crit'
   | 'antiCrit'
-  | 'critDamage';
+  | 'critDamage'
+  | 'intercept'
+  | 'armorBreak';
 
 export type AttributeCategory = 'absolute' | 'percent';
 
@@ -33,9 +36,21 @@ export interface AttributeDef {
 
 export type Stats = Record<AttributeKey, number>;
 
-export type ShapeId = 'single' | 'sameRow' | 'sameColumn' | 'cross';
+export type ShapeId =
+  | 'single'
+  | 'sameRow'
+  | 'sameColumn'
+  | 'cross'
+  | 'self';
 
-export type EffectKind = 'shield' | 'lock' | 'silence';
+export type EffectKind =
+  | 'shield'
+  | 'lock'
+  | 'silence'
+  | 'statBuff'
+  | 'freeze'
+  | 'stealth'
+  | 'poison';
 
 export type DamageKind = 'normal' | 'skill';
 

@@ -1,17 +1,17 @@
 import { Unit } from '../battle/Unit';
 import type { CharacterTemplate } from '../data/characters';
 import type { Coord, Side, Stats } from '../core/types';
-import { createStats } from '../core/attributes';
 import { applyModifiers } from '../core/modifiers';
 import { CRYSTAL_MAP } from '../data/crystals';
 import { SKILLS } from '../skills/registry';
+import { buildLevelBaseStats } from './level';
 
 export function buildUnitStats(
   template: CharacterTemplate,
   crystalIds: string[],
 ): Stats {
   const mods = crystalIds.flatMap((id) => CRYSTAL_MAP[id]?.mods ?? []);
-  return applyModifiers(createStats(template.base), mods);
+  return applyModifiers(buildLevelBaseStats(template), mods);
 }
 
 export function buildUnit(
@@ -29,7 +29,11 @@ export function buildUnit(
     id: `${idPrefix}-${template.id}`,
     name: template.name,
     role: template.role,
+    faction: template.faction,
+    rarity: template.rarity,
     destroyer: !!template.destroyer,
+    noHitCharge: template.passive?.noHitCharge,
+    passiveDescription: template.passive?.description,
     side,
     coord,
     stats,

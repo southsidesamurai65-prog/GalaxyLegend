@@ -1,10 +1,19 @@
 import './styles.css';
+import { MAX_TEAM_SIZE } from './core/types';
 import type { Coord } from './core/types';
 import { Game } from './game/Game';
+import { MAX_LEVEL } from './game/level';
+import { CHARACTER_MAP } from './data/characters';
+import {
+  deleteLineupPreset,
+  loadLineupPresets,
+  saveLineupPreset,
+} from './game/lineups';
 import { renderBoard } from './ui/boardView';
 import { renderBattlePanel, renderPreparePanel } from './ui/hud';
 import { LogView } from './ui/logView';
-import { playEventsFx } from './ui/fx';
+import { clearFxLayer, initFxLayer, playEventsFx } from './ui/fx';
+import { initGalaxyBackground } from './ui/background';
 
 const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) throw new Error('Missing #app');
@@ -16,21 +25,31 @@ app.innerHTML = `
         <h1>银河传说</h1>
         <div class="subtitle">3×3 自动战斗 · 机制演示</div>
       </div>
-      <div id="phase-label" class="phase-label prepare">准备阶段</div>
+      <div class="topbar-meta">
+        <span class="level-chip">Lv.${MAX_LEVEL} · 全装备</span>
+        <div id="phase-label" class="phase-label prepare">准备阶段</div>
+      </div>
     </header>
     <main class="layout">
       <section class="battlefield">
-        <div class="board-wrap">
-          <div class="side-title player-title">我方</div>
-          <div id="player-board" class="board"></div>
-          <div class="axis">后排 <span>←</span> <span>→</span> 前排</div>
+        <div id="round-badge" class="round-badge" hidden>
+          <span>回合</span>
+          <b id="round-value">1</b>
         </div>
-        <div class="vs">VS</div>
-        <div class="board-wrap">
-          <div class="side-title enemy-title">敌方</div>
-          <div id="enemy-board" class="board"></div>
-          <div class="axis">前排 <span>←</span> <span>→</span> 后排</div>
+        <div class="battlefield-plane">
+          <div class="board-wrap player-fleet">
+            <div class="side-title player-title">我方舰队</div>
+            <div id="player-board" class="board"></div>
+            <div class="axis">后排 <span>←</span> <span>→</span> 前排</div>
+          </div>
+          <div class="vs">VS</div>
+          <div class="board-wrap enemy-fleet">
+            <div id="enemy-title" class="side-title enemy-title">敌方舰队</div>
+            <div id="enemy-board" class="board"></div>
+            <div class="axis">前排 <span>←</span> <span>→</span> 后排</div>
+          </div>
         </div>
+        <div id="battle-fx-layer" class="fx-layer"></div>
       </section>
       <aside class="panel">
         <div id="panel-content"></div>
@@ -47,24 +66,32 @@ app.innerHTML = `
   </div>
 `;
 
+initGalaxyBackground(document.querySelector<HTMLDivElement>('#galaxy-bg'));
+
 const playerBoard = document.querySelector<HTMLDivElement>('#player-board')!;
 const enemyBoard = document.querySelector<HTMLDivElement>('#enemy-board')!;
+const enemyTitle = document.querySelector<HTMLDivElement>('#enemy-title')!;
 const panelContent = document.querySelector<HTMLDivElement>('#panel-content')!;
 const logElement = document.querySelector<HTMLDivElement>('#log')!;
 const phaseLabel = document.querySelector<HTMLDivElement>('#phase-label')!;
+const roundBadge = document.querySelector<HTMLDivElement>('#round-badge')!;
+const roundValue = document.querySelector<HTMLElement>('#round-value')!;
 const footerActions = document.querySelector<HTMLDivElement>('#footer-actions')!;
 const footerHint = document.querySelector<HTMLDivElement>('#footer-hint')!;
+
+initFxLayer(document.querySelector<HTMLDivElement>('#battle-fx-layer'));
 
 const game = new Game();
 const log = new LogView(logElement);
 
 let timer: number | null = null;
 let paused = false;
-let speedMs = 700;
+let speedMs = 1000;
 
 const prepareCallbacks = {
   selectChar: (charId: string) => {
-    game.selectedCharId = charId;
+    if (game.enemyEditMode) game.selectedEnemyCharId = charId;
+    else game.selectedCharId = charId;
     render();
   },
   placeChar: (charId: string) => {
@@ -79,10 +106,34 @@ const prepareCallbacks = {
     game.equipCrystal(charId, crystalId);
     render();
   },
+  toggleEnemyCrystal: (charId: string, crystalId: string) => {
+    game.equipEnemyCrystal(charId, crystalId);
+    render();
+  },
+  saveLineup: (name: string) => {
+    saveLineupPreset(name, game.snapshotLineup());
+    log.add('当前阵容已保存。', 'round');
+    render();
+  },
+  loadLineup: (id: string) => {
+    const preset = loadLineupPresets().find((current) => current.id === id);
+    if (!preset || !game.applyLineup(preset)) return;
+    clearTimer();
+    clearFxLayer();
+    paused = false;
+    log.clear();
+    log.add(`已读取阵容「${preset.name}」。`, 'round');
+    render();
+  },
+  deleteLineup: (id: string) => {
+    deleteLineupPreset(id);
+    log.add('阵容存档已删除。', 'round');
+    render();
+  },
 };
 
 log.add(
-  '准备阶段：点击角色，再点击我方棋盘空位放置/移动；点击氪晶装备或卸下。',
+  '准备阶段：必须上阵 1 艘旗舰；点击角色，再点击我方棋盘空位放置/移动；点击氪晶装备或卸下。',
   'round',
 );
 
@@ -97,13 +148,20 @@ function render(): void {
         : '战斗结束';
   phaseLabel.className = `phase-label ${game.phase}`;
 
+  roundBadge.hidden = game.phase === 'prepare';
+  roundValue.textContent = String(game.battle?.round ?? 1);
+  enemyTitle.textContent = game.enemyEditMode ? '敌方舰队 · 编辑中' : '敌方舰队';
+
   renderBoard(playerBoard, game, 'player', {
     onCellClick: handleCellClick,
     onUnitClick: handleUnitClick,
     onPreviewClick: handlePreviewClick,
+    enemyEditMode: game.enemyEditMode,
   });
   renderBoard(enemyBoard, game, 'enemy', {
     onUnitClick: handleUnitClick,
+    onEnemyCellClick: handleEnemyCellClick,
+    enemyEditMode: game.enemyEditMode,
   });
 
   if (game.phase === 'prepare') {
@@ -116,7 +174,7 @@ function render(): void {
 }
 
 function handleCellClick(coord: Coord): void {
-  if (game.phase !== 'prepare') return;
+  if (game.phase !== 'prepare' || game.enemyEditMode) return;
 
   const slot = game.slotAt(coord);
   if (slot) {
@@ -131,19 +189,44 @@ function handleCellClick(coord: Coord): void {
   }
 }
 
+function handleEnemyCellClick(coord: Coord): void {
+  if (game.phase !== 'prepare' || !game.enemyEditMode) return;
+
+  const slot = game.enemySlotAt(coord);
+  if (slot) {
+    if (
+      game.selectedEnemyCharId &&
+      game.selectedEnemyCharId !== slot.charId
+    ) {
+      game.placeEnemyAt(game.selectedEnemyCharId, coord);
+    } else {
+      game.selectedEnemyCharId = slot.charId;
+    }
+    render();
+    return;
+  }
+
+  if (game.selectedEnemyCharId) {
+    game.placeEnemyAt(game.selectedEnemyCharId, coord);
+    render();
+  }
+}
+
 function handleUnitClick(unitId: string): void {
   game.selectedBattleUnitId = unitId;
   render();
 }
 
 function handlePreviewClick(charId: string): void {
-  game.selectedCharId = charId;
+  if (game.enemyEditMode) game.selectedEnemyCharId = charId;
+  else game.selectedCharId = charId;
   render();
 }
 
 function beginBattle(): void {
   if (game.slots.length === 0) return;
   clearTimer();
+  clearFxLayer();
 
   if (!game.startBattle()) return;
   paused = false;
@@ -207,28 +290,90 @@ function renderFooter(): void {
   footerActions.innerHTML = '';
 
   if (game.phase === 'prepare') {
-    const start = button('开始战斗', 'primary', beginBattle);
-    start.disabled = game.slots.length === 0;
+    if (game.enemyEditMode) {
+      const done = button('完成编辑', 'primary', () => {
+        game.enemyEditMode = false;
+        game.selectedEnemyCharId = null;
+        render();
+      });
 
-    const reset = button('重置阵容', '', () => {
-      clearTimer();
-      paused = false;
-      game.reset();
-      log.clear();
-      log.add('阵容已重置。', 'round');
+      const remove = button('移除选中', '', () => {
+        if (!game.selectedEnemyCharId) return;
+        game.removeEnemy(game.selectedEnemyCharId);
+        render();
+      });
+      remove.disabled =
+        !game.selectedEnemyCharId || game.enemySlots.length === 0;
+
+      const clear = button('清空敌方', '', () => {
+        game.clearEnemyLineup();
+        render();
+      });
+
+      const random = button('随机敌方', '', () => {
+        game.refreshEnemy();
+        render();
+      });
+
+      footerActions.append(done, remove, clear, random);
+      if (game.selectedEnemyCharId) {
+        const selectedName =
+          CHARACTER_MAP[game.selectedEnemyCharId]?.name ??
+          game.selectedEnemyCharId;
+        const selectedPlaced = game.isEnemyPlaced(game.selectedEnemyCharId);
+        footerHint.textContent =
+          game.enemySlots.length >= MAX_TEAM_SIZE && !selectedPlaced
+            ? `敌方已满 5/5 · 点击已有敌人可替换，或先移除一名敌人`
+            : `已选择「${selectedName}」 · 点击敌方格子放置/移动`;
+      } else {
+        footerHint.textContent = `敌方 ${game.enemySlots.length}/5 · 点击角色后点击敌方格子`;
+      }
+      return;
+    }
+
+    const start = button('开始战斗', 'primary', beginBattle);
+    start.disabled =
+      game.slots.length === 0 ||
+      game.flagshipCount !== 1 ||
+      game.enemySlots.length === 0;
+
+    const editEnemy = button('自定义敌方', '', () => {
+      game.enemyEditMode = true;
+      game.selectedEnemyCharId = null;
       render();
     });
 
-    footerActions.append(start, reset);
-    footerHint.textContent = `已上阵 ${game.slots.length}/5 · 点击角色后点击空位放置/移动`;
+    const refresh = button('刷新敌人', '', () => {
+      game.refreshEnemy();
+      log.add('敌方舰队已重新集结。', 'round');
+      render();
+    });
+
+    const reset = button('重置阵容', '', () => {
+      clearTimer();
+      clearFxLayer();
+      paused = false;
+      game.reset();
+      log.clear();
+      log.add('阵容已重置，敌方舰队已刷新。', 'round');
+      render();
+    });
+
+    footerActions.append(start, editEnemy, refresh, reset);
+    footerHint.textContent =
+      game.flagshipCount === 0
+        ? '必须上阵 1 艘旗舰'
+        : game.flagshipCount > 1
+          ? '只能上阵 1 艘旗舰'
+          : `已上阵 ${game.slots.length}/5 · 点击角色后点击我方空位放置/移动`;
     return;
   }
 
   if (game.phase === 'battle') {
     const pause = button(paused ? '继续' : '暂停', '', togglePause);
-    const speed1 = button('1×', speedMs === 700 ? 'active' : '', () => setSpeed(700));
-    const speed2 = button('2×', speedMs === 350 ? 'active' : '', () => setSpeed(350));
-    const speed4 = button('4×', speedMs === 175 ? 'active' : '', () => setSpeed(175));
+    const speed1 = button('1×', speedMs === 1000 ? 'active' : '', () => setSpeed(1000));
+    const speed2 = button('2×', speedMs === 500 ? 'active' : '', () => setSpeed(500));
+    const speed4 = button('4×', speedMs === 250 ? 'active' : '', () => setSpeed(250));
     const restart = button('重新开始', '', beginBattle);
 
     footerActions.append(pause, speed1, speed2, speed4, restart);
@@ -239,6 +384,7 @@ function renderFooter(): void {
   const again = button('再战', 'primary', beginBattle);
   const back = button('返回准备', '', () => {
     clearTimer();
+    clearFxLayer();
     paused = false;
     game.backToPrepare();
     log.clear();

@@ -35,8 +35,12 @@ export interface DamageResult {
 export function rollDamage(input: DamageInput, rng: Rng): DamageResult {
   const { attacker, target, kind, skill, charge = 0, holy = false } = input;
 
-  const hitChance = clamp(attacker.stats.hit - target.stats.dodge, 0, 100);
-  const critChance = clamp(attacker.stats.crit - target.stats.antiCrit, 0, 100);
+  const hitChance = clamp(attacker.getStat('hit') - target.getStat('dodge'), 0, 100);
+  const critChance = clamp(
+    attacker.getStat('crit') - target.getStat('antiCrit'),
+    0,
+    100,
+  );
 
   if (!rng.chance(hitChance)) {
     return {
@@ -55,18 +59,30 @@ export function rollDamage(input: DamageInput, rng: Rng): DamageResult {
   let multiplier = 1;
 
   if (kind === 'normal') {
-    const physDef = attacker.destroyer ? 0 : target.stats.physDef;
-    base = offense - physDef;
+    const defense = holy
+      ? 0
+      : attacker.destroyer
+        ? target.getStat('energyDef')
+        : target.getStat('physDef');
+    base = offense - defense;
   } else {
     if (!skill) throw new Error('Skill damage requires a skill definition');
     multiplier = skill.baseMultiplier * (charge / 100);
-    const physDef = attacker.destroyer || holy ? 0 : target.stats.physDef;
-    const skillDef = holy ? 0 : target.stats.skillDef;
-    base = multiplier * (offense + attacker.stats.skillAtk) - physDef - skillDef;
+    const primaryDef = holy
+      ? 0
+      : attacker.destroyer
+        ? target.getStat('energyDef')
+        : target.getStat('physDef');
+    const skillDef =
+      holy || attacker.destroyer ? 0 : target.getStat('skillDef');
+    base =
+      multiplier * (offense + attacker.getStat('skillAtk')) -
+      primaryDef -
+      skillDef;
   }
 
   const crit = rng.chance(critChance);
-  const critMultiplier = attacker.stats.critDamage / 100;
+  const critMultiplier = attacker.getStat('critDamage') / 100;
   let amount = base;
   if (crit) amount *= critMultiplier;
   amount = Math.max(1, Math.floor(amount));

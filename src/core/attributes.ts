@@ -36,6 +36,13 @@ export const ATTRIBUTE_DEFS: Record<AttributeKey, AttributeDef> = {
     defaultValue: 0,
     min: 0,
   },
+  energyDef: {
+    key: 'energyDef',
+    label: '能量防御',
+    category: 'absolute',
+    defaultValue: 0,
+    min: 0,
+  },
   hp: {
     key: 'hp',
     label: 'HP',
@@ -92,6 +99,20 @@ export const ATTRIBUTE_DEFS: Record<AttributeKey, AttributeDef> = {
     category: 'percent',
     defaultValue: 150,
     min: 100,
+  },
+  intercept: {
+    key: 'intercept',
+    label: '拦截',
+    category: 'percent',
+    defaultValue: 0,
+    min: 0,
+  },
+  armorBreak: {
+    key: 'armorBreak',
+    label: '破防',
+    category: 'percent',
+    defaultValue: 0,
+    min: 0,
   },
 };
 

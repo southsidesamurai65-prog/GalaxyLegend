@@ -13,10 +13,13 @@ export function resolveTargets(
   anchor: Unit,
   board: Board,
 ): Unit[] {
-  const enemies = board.aliveEnemies(caster.side);
+  const enemies = board.targetableEnemies(caster.side);
   let targets: Unit[];
 
   switch (shape) {
+    case 'self':
+      targets = [];
+      break;
     case 'single':
       targets = [anchor];
       break;
@@ -45,4 +48,5 @@ export const SHAPE_LABELS: Record<ShapeId, string> = {
   sameRow: '纵向（同行）',
   sameColumn: '横向（同列）',
   cross: '十字',
+  self: '自身',
 };

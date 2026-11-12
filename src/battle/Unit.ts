@@ -1,5 +1,6 @@
-import type { Coord, Side, Stats, EffectKind } from '../core/types';
+import type { AttributeKey, Coord, Side, Stats, EffectKind } from '../core/types';
 import { MAX_CHARGE } from '../core/types';
+import { applyModifiers } from '../core/modifiers';
 import type { Effect } from './effects/Effect';
 import type { SkillDef } from '../skills/Skill';
 
@@ -7,7 +8,11 @@ export interface UnitInit {
   id: string;
   name: string;
   role: string;
+  faction?: string;
+  rarity?: string;
   destroyer: boolean;
+  noHitCharge?: boolean;
+  passiveDescription?: string;
   side: Side;
   coord: Coord;
   stats: Stats;
@@ -18,7 +23,11 @@ export class Unit {
   readonly id: string;
   readonly name: string;
   readonly role: string;
+  readonly faction?: string;
+  readonly rarity?: string;
   readonly destroyer: boolean;
+  readonly noHitCharge: boolean;
+  readonly passiveDescription?: string;
   readonly side: Side;
   readonly stats: Stats;
   readonly maxHp: number;
@@ -34,7 +43,11 @@ export class Unit {
     this.id = init.id;
     this.name = init.name;
     this.role = init.role;
+    this.faction = init.faction;
+    this.rarity = init.rarity;
     this.destroyer = init.destroyer;
+    this.noHitCharge = !!init.noHitCharge;
+    this.passiveDescription = init.passiveDescription;
     this.side = init.side;
     this.coord = { ...init.coord };
     this.stats = init.stats;
@@ -44,16 +57,43 @@ export class Unit {
     this.charge = Math.min(MAX_CHARGE, Math.max(0, init.stats.initialCharge));
   }
 
+  /** 基础属性 + 氪晶等永久修正；临时 buff/debuff 通过 getStats 叠加。 */
+  getStats(): Stats {
+    const mods = this.effects.flatMap((effect) => effect.statMods ?? []);
+    return mods.length === 0 ? { ...this.stats } : applyModifiers(this.stats, mods);
+  }
+
+  getStat(key: AttributeKey): number {
+    const hasTemporaryMods = this.effects.some(
+      (effect) => (effect.statMods?.length ?? 0) > 0,
+    );
+    return hasTemporaryMods ? this.getStats()[key] : this.stats[key];
+  }
+
   get offense(): number {
-    return this.destroyer ? this.stats.energyAtk : this.stats.physAtk;
+    return this.getStat(this.destroyer ? 'energyAtk' : 'physAtk');
+  }
+
+  lockKind(): 'lock' | 'freeze' | null {
+    if (this.effects.some((effect) => effect.kind === 'freeze')) {
+      return 'freeze';
+    }
+    if (this.effects.some((effect) => effect.kind === 'lock')) {
+      return 'lock';
+    }
+    return null;
   }
 
   isLocked(): boolean {
-    return this.effects.some((effect) => effect.kind === 'lock');
+    return this.lockKind() !== null;
   }
 
   isSilenced(): boolean {
     return this.effects.some((effect) => effect.kind === 'silence');
+  }
+
+  isStealthed(): boolean {
+    return this.effects.some((effect) => effect.kind === 'stealth');
   }
 
   hasEffect(kind: EffectKind): boolean {
@@ -90,13 +130,19 @@ export class Unit {
       (effect) => effect.kind === 'shield' && (effect.absorb ?? 0) > 0,
     );
     if (shields.length === 0) return 0;
-    return Math.min(...shields.map((effect) => effect.remainingActions));
+    return Math.max(
+      1,
+      Math.min(...shields.map((effect) => effect.remainingActions)),
+    );
   }
 
   effectMaxDuration(kind: EffectKind): number {
     const effects = this.effects.filter((effect) => effect.kind === kind);
     if (effects.length === 0) return 0;
-    return Math.max(...effects.map((effect) => effect.remainingActions));
+    return Math.max(
+      1,
+      Math.max(...effects.map((effect) => effect.remainingActions)),
+    );
   }
 
   /**
@@ -131,16 +177,33 @@ export class Unit {
     return { shieldAbsorbed, hpDamage, died };
   }
 
+  /** 治疗，返回实际回复的 HP；不会超过最大 HP。 */
+  heal(amount: number): number {
+    if (!this.alive || amount <= 0) return 0;
+    const before = this.hp;
+    this.hp = Math.min(this.maxHp, this.hp + amount);
+    return this.hp - before;
+  }
+
+  /** 中毒等直接损失 HP，不经过护盾和防御。 */
+  takeTrueDamage(amount: number): boolean {
+    this.hp = Math.max(0, this.hp - amount);
+    const died = this.hp <= 0 && this.alive;
+    if (died) this.alive = false;
+    return died;
+  }
+
   /**
-   * 只递减“本次行动开始时已经存在”的效果。
-   * 本次行动中新获得的效果不会立刻掉一层。
+   * 在受影响单位每次行动开始前调用。
+   * x 回合效果会在第 x+1 次行动开始前移除，因此第 x 次行动和其间的其他单位行动都还能享受效果。
+   * 行动中新获得的效果不会立刻掉层。
    */
   tickEffects(effectsAtStart: Effect[]): Effect[] {
     const expired: Effect[] = [];
     for (const effect of effectsAtStart) {
       if (!this.effects.includes(effect)) continue;
       effect.remainingActions -= 1;
-      if (effect.remainingActions <= 0) {
+      if (effect.remainingActions < 0) {
         this.removeEffect(effect);
         expired.push(effect);
       }
